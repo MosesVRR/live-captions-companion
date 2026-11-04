@@ -6,6 +6,7 @@ from PySide6.QtGui import QTextCursor
 from capture.worker import CaptureWorker
 from PySide6.QtWidgets import (
     QInputDialog,
+    QFileDialog,
     QLabel,
     QListWidget,
     QListWidgetItem,
@@ -20,6 +21,7 @@ from PySide6.QtWidgets import (
 )
 
 from capture.history import SessionHistory
+from capture.export import export_session
 
 
 class MainWindow(QMainWindow):
@@ -29,6 +31,9 @@ class MainWindow(QMainWindow):
         super().__init__()
 
         self.history = SessionHistory()
+        # At startup, no capture worker from a previous process can still be
+        # running. Mark any sessions left open by a crash as interrupted.
+        self.recovered_session_ids = self.history.recover_interrupted_sessions()
         self.sessions: list[dict] = []
         self.current_session_id: str | None = None
         self.saved_transcript = ""
@@ -41,6 +46,13 @@ class MainWindow(QMainWindow):
 
         self._build_ui()
         self.refresh_sessions()
+        if self.recovered_session_ids:
+            count = len(self.recovered_session_ids)
+            self.statusBar().showMessage(
+                f"Recovered {count} interrupted recording session(s). "
+                "Their captured transcripts have been preserved.",
+                10000,
+            )
 
     def _build_ui(self) -> None:
         """Create and arrange the main interface."""
@@ -66,6 +78,9 @@ class MainWindow(QMainWindow):
         self.delete_button = QPushButton("Delete Session")
         self.delete_button.clicked.connect(self.delete_selected_session)
 
+        self.export_button = QPushButton("Export Transcript")
+        self.export_button.clicked.connect(self.export_selected_session)
+
         self.session_list = QListWidget()
         self.session_list.currentItemChanged.connect(
             self.on_session_selected
@@ -80,6 +95,7 @@ class MainWindow(QMainWindow):
         left_layout.addWidget(self.stop_button)
         left_layout.addWidget(self.rename_button)
         left_layout.addWidget(self.delete_button)
+        left_layout.addWidget(self.export_button)
         left_layout.addWidget(self.session_list)
 
         self.session_title = QLabel("Select a session")
@@ -151,6 +167,7 @@ class MainWindow(QMainWindow):
         self.transcript_viewer.setReadOnly(True)
         self.rename_button.setEnabled(False)
         self.delete_button.setEnabled(False)
+        self.export_button.setEnabled(False)
         self.session_list.setEnabled(False)
         self.statusBar().showMessage("Starting caption capture...")
 
@@ -206,6 +223,7 @@ class MainWindow(QMainWindow):
         self.transcript_viewer.setReadOnly(False)
         self.rename_button.setEnabled(True)
         self.delete_button.setEnabled(True)
+        self.export_button.setEnabled(self.current_session_id is not None)
         self.session_list.setEnabled(True)
         self.active_capture_session_id = None
 
@@ -233,6 +251,8 @@ class MainWindow(QMainWindow):
 
         self.save_button.setEnabled(has_session and is_dirty)
         self.discard_button.setEnabled(has_session and is_dirty)
+        recording = self.capture_worker is not None and self.capture_worker.isRunning()
+        self.export_button.setEnabled(has_session and not recording)
 
         if has_session and is_dirty:
             self.session_title.setText(
@@ -477,6 +497,77 @@ class MainWindow(QMainWindow):
         self.update_editor_state()
         self.statusBar().showMessage("Transcript saved successfully")
         return True
+
+    def export_selected_session(self) -> None:
+        """Export the selected transcript to a user-chosen file."""
+        if not self.current_session_id:
+            QMessageBox.information(
+                self, "No session selected", "Select a session before exporting."
+            )
+            return
+
+        if self.capture_worker is not None and self.capture_worker.isRunning():
+            QMessageBox.information(
+                self, "Recording in progress",
+                "Stop the recording before exporting this session."
+            )
+            return
+
+        session = self.history.get_session(self.current_session_id)
+        if session is None:
+            QMessageBox.warning(self, "Session not found", "This session could not be found.")
+            return
+
+        formats = ["Plain text (*.txt)", "Markdown (*.md)", "JSON (*.json)", "SubRip subtitles (*.srt)"]
+        selected, accepted = QInputDialog.getItem(
+            self, "Export Transcript", "Choose an export format:", formats, 0, False
+        )
+        if not accepted:
+            return
+
+        extensions = {formats[0]: "txt", formats[1]: "md", formats[2]: "json", formats[3]: "srt"}
+        extension = extensions[selected]
+        session_name = session.get("name") or session.get("session_id", "transcript")
+        safe_name = "".join(char if char.isalnum() or char in " -_" else "_" for char in session_name).strip()
+        default_path = str(Path.home() / "Documents" / f"{safe_name or 'transcript'}.{extension}")
+        # Use Qt's own file dialog instead of the native Windows dialog.
+        # This avoids OLE/COM initialization conflicts that can occur when
+        # pywinauto has initialized COM in the application process.
+        destination, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save Export",
+            default_path,
+            f"{selected};;All files (*)",
+            options=QFileDialog.Option.DontUseNativeDialog,
+        )
+        if not destination:
+            return
+
+        if Path(destination).suffix.lower() != f".{extension}":
+            destination = f"{destination}.{extension}"
+
+        try:
+            session_dir = Path(session["_directory"])
+            timestamped_name = session.get(
+                "timestamped_transcript_file", "timestamped_transcript.txt"
+            )
+            timestamped_path = session_dir / timestamped_name
+            if timestamped_path.resolve().parent != session_dir.resolve():
+                raise ValueError("Invalid timestamped transcript path in session metadata.")
+
+            export_session(
+                destination=destination,
+                file_format=extension,
+                transcript=self.transcript_viewer.toPlainText(),
+                metadata=session,
+                timestamped_transcript_path=timestamped_path,
+            )
+        except (OSError, ValueError) as exc:
+            QMessageBox.warning(self, "Export failed", f"Could not export the transcript:\n{exc}")
+            return
+
+        self.statusBar().showMessage(f"Transcript exported: {destination}")
+        QMessageBox.information(self, "Export complete", f"Transcript exported successfully:\n{destination}")
 
     def discard_transcript_changes(self) -> None:
         """Restore the last saved transcript."""

@@ -1,12 +1,14 @@
 """Background worker for capturing Windows Live Captions."""
 import re
 import threading
+from pathlib import Path
 from datetime import datetime
 
 from PySide6.QtCore import QThread, Signal
 from pywinauto import Desktop
 
 from capture.session import CaptureSession
+from capture.paths import get_transcripts_dir
 
 POLL_INTERVAL = 0.5
 
@@ -131,9 +133,9 @@ class CaptureWorker(QThread):
     transcript_update = Signal(str)
     recording_finished = Signal(str, str)
 
-    def __init__(self, output_dir: str = "transcripts") -> None:
+    def __init__(self, output_dir: str | Path | None = None) -> None:
         super().__init__()
-        self.output_dir = output_dir
+        self.output_dir = Path(output_dir) if output_dir is not None else get_transcripts_dir()
         self._stop_event = threading.Event()
         self._session_id = ""
 

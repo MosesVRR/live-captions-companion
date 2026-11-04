@@ -42,6 +42,40 @@ class TestSessionHistory(unittest.TestCase):
         self.assertIsNotNone(result)
         self.assertEqual(result["status"], "recording")
 
+    def test_recover_interrupted_session_preserves_transcript(self):
+        session = self.create_session("Text captured before the crash.")
+
+        recovered = self.history.recover_interrupted_sessions()
+        metadata = self.history.get_session(session.session_id)
+
+        self.assertEqual(recovered, [session.session_id])
+        self.assertEqual(metadata["status"], "interrupted")
+        self.assertIsNotNone(metadata["ended_at"])
+        self.assertIsNotNone(metadata["duration_seconds"])
+        self.assertEqual(
+            self.history.read_transcript(session.session_id),
+            "Text captured before the crash.",
+        )
+
+    def test_recovery_does_not_change_completed_session(self):
+        session = self.create_session()
+        session.finish()
+
+        recovered = self.history.recover_interrupted_sessions()
+        metadata = self.history.get_session(session.session_id)
+
+        self.assertEqual(recovered, [])
+        self.assertEqual(metadata["status"], "completed")
+
+    def test_recovery_is_idempotent(self):
+        session = self.create_session()
+
+        first = self.history.recover_interrupted_sessions()
+        second = self.history.recover_interrupted_sessions()
+
+        self.assertEqual(first, [session.session_id])
+        self.assertEqual(second, [])
+
     def test_read_transcript(self):
         session = self.create_session("Bonjour tout le monde.")
 

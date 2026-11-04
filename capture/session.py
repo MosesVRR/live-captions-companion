@@ -5,12 +5,14 @@ import time
 from datetime import datetime
 from pathlib import Path
 
+from capture.paths import get_transcripts_dir
+
 
 class CaptureSession:
     """Represent a single Windows Live Captions capture session."""
 
-    def __init__(self, output_dir: str | Path = "transcripts") -> None:
-        self.output_dir = Path(output_dir)
+    def __init__(self, output_dir: str | Path | None = None) -> None:
+        self.output_dir = Path(output_dir) if output_dir is not None else get_transcripts_dir()
         self.session_id = datetime.now().astimezone().strftime(
             "%Y-%m-%d_%H-%M-%S_%f"
         )
