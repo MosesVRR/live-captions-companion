@@ -82,6 +82,30 @@ def format_transcript(text: str) -> str:
     return "\n\n".join(paragraphs)
 
 
+def extract_complete_sentences(text: str) -> list[str]:
+    """Return sentences that appear complete in the current caption text.
+
+    A sentence is considered complete when it ends with sentence punctuation.
+    The same conservative boundary rule used by format_transcript is used to
+    split sentences within the text. The final partial sentence is excluded.
+    """
+    text = normalize_caption_text(text)
+    if not text:
+        return []
+
+    boundary = re.compile(
+        r'(?<=[.!?…])(?:[”’"\']?)(?=\s+[A-ZÀ-ÖØ-Þ0-9“"\'])'
+    )
+    parts = boundary.split(text)
+    sentences = [part.strip() for part in parts if part.strip()]
+
+    complete = []
+    for sentence in sentences:
+        if re.search(r'[.!?…][”’"\']?$', sentence):
+            complete.append(sentence)
+    return complete
+
+
 def text_after_baseline(baseline: str, current: str) -> str:
     """Return the session portion of a cumulative caption control."""
     if not current:
@@ -142,10 +166,12 @@ class CaptureWorker(QThread):
             baseline = normalize_caption_text(get_caption_text(window))
             previous_raw = get_caption_text(window)
             session_transcript = ""
+            timestamped_sentences: list[dict[str, str]] = []
 
             with (
                 session.transcript_file.open("w", encoding="utf-8") as transcript,
                 session.snapshots_file.open("w", encoding="utf-8") as snapshots,
+                session.timestamped_transcript_file.open("w", encoding="utf-8") as timestamped,
             ):
                 self.transcript_update.emit("")
 
@@ -179,6 +205,43 @@ class CaptureWorker(QThread):
                                 transcript.truncate()
                                 transcript.flush()
                                 self.transcript_update.emit(session_transcript)
+
+                            # Maintain a separate timestamped transcript.
+                            # A sentence is added once it appears complete;
+                            # if Live Captions revises earlier text, keep its
+                            # timestamp when the sentence still matches.
+                            detected_at = datetime.now().astimezone().strftime(
+                                "%H:%M:%S"
+                            )
+                            current_sentences = extract_complete_sentences(
+                                latest_session_text
+                            )
+                            updated_records = []
+                            for index, sentence in enumerate(current_sentences):
+                                if (
+                                    index < len(timestamped_sentences)
+                                    and timestamped_sentences[index]["text"] == sentence
+                                ):
+                                    sentence_time = timestamped_sentences[index]["time"]
+                                else:
+                                    sentence_time = detected_at
+                                updated_records.append(
+                                    {"time": sentence_time, "text": sentence}
+                                )
+
+                            if updated_records != timestamped_sentences:
+                                timestamped_sentences = updated_records
+                                timestamped.seek(0)
+                                timestamped.write(
+                                    "\n".join(
+                                        f"[{record['time']}] {record['text']}"
+                                        for record in timestamped_sentences
+                                    )
+                                )
+                                if timestamped_sentences:
+                                    timestamped.write("\n")
+                                timestamped.truncate()
+                                timestamped.flush()
 
                             previous_raw = current_raw
 

@@ -16,6 +16,7 @@ class TestCaptureSession(unittest.TestCase):
             self.assertTrue(session.session_dir.is_dir())
             self.assertTrue(session.transcript_file.is_file())
             self.assertTrue(session.snapshots_file.is_file())
+            self.assertTrue(session.timestamped_transcript_file.is_file())
             self.assertTrue(session.metadata_file.is_file())
 
     def test_initial_metadata_marks_session_as_recording(self):
@@ -27,6 +28,10 @@ class TestCaptureSession(unittest.TestCase):
             )
 
             self.assertEqual(metadata["status"], "recording")
+            self.assertEqual(
+                metadata["timestamped_transcript_file"],
+                "timestamped_transcript.txt",
+            )
             self.assertIsNone(metadata["ended_at"])
             self.assertIsNone(metadata["duration_seconds"])
 

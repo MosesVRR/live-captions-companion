@@ -18,6 +18,7 @@ class CaptureSession:
         self.session_dir = self.output_dir / f"session_{self.session_id}"
         self.transcript_file = self.session_dir / "transcript.txt"
         self.snapshots_file = self.session_dir / "snapshots.txt"
+        self.timestamped_transcript_file = self.session_dir / "timestamped_transcript.txt"
         self.metadata_file = self.session_dir / "metadata.json"
 
         self.started_at = datetime.now().astimezone()
@@ -27,6 +28,7 @@ class CaptureSession:
         self.session_dir.mkdir(parents=True, exist_ok=False)
         self.transcript_file.touch()
         self.snapshots_file.touch()
+        self.timestamped_transcript_file.touch()
 
         self._save_metadata()
 
@@ -49,6 +51,7 @@ class CaptureSession:
             "language": None,
             "transcript_file": "transcript.txt",
             "snapshots_file": "snapshots.txt",
+            "timestamped_transcript_file": "timestamped_transcript.txt",
         }
 
         self.metadata_file.write_text(
