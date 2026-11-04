@@ -1,4 +1,4 @@
-"""Application entry point."""
+"""Application entry point for Live Captions Companion."""
 
 import sys
 
@@ -9,7 +9,8 @@ from gui.main_window import MainWindow
 
 def main() -> None:
     app = QApplication(sys.argv)
-    app.setApplicationName("Windows Caption Capture")
+    app.setApplicationName("Live Captions Companion")
+    app.setOrganizationName("Live Captions Companion")
 
     window = MainWindow()
     window.show()

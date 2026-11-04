@@ -4,24 +4,22 @@ __pycache__/
 *$py.class
 .pytest_cache/
 .mypy_cache/
-.ruff_cache/
 
 # Virtual environments
 .venv/
 venv/
 env/
 
-# Local application data and recordings
-transcripts/
-*.log
-
-# Build/package output
+# Build and packaging
 build/
 dist/
 *.spec
-*.egg-info/
 
-# Editors and OS files
+# Local recordings and user data
+transcripts/
+*.log
+
+# IDE / OS
 .vscode/
 .idea/
 .DS_Store

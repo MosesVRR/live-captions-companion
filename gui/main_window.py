@@ -1,4 +1,4 @@
-"""Main window for Windows Caption Capture."""
+"""Main window for Live Captions Companion."""
 from pathlib import Path
 
 from PySide6.QtCore import Qt
@@ -16,6 +16,8 @@ from PySide6.QtWidgets import (
     QSplitter,
     QTextEdit,
     QVBoxLayout,
+    QHBoxLayout,
+    QFrame,
     QWidget,
     QLineEdit,
 )
@@ -40,7 +42,7 @@ class MainWindow(QMainWindow):
         self.capture_worker: CaptureWorker | None = None
         self.active_capture_session_id: str | None = None
 
-        self.setWindowTitle("Windows Caption Capture")
+        self.setWindowTitle("Live Captions Companion")
         self.resize(1100, 700)
         self.setMinimumSize(800, 500)
 
@@ -55,95 +57,276 @@ class MainWindow(QMainWindow):
             )
 
     def _build_ui(self) -> None:
-        """Create and arrange the main interface."""
-        self.search_input = QLineEdit()
-        self.search_input.setPlaceholderText(
-            "Search sessions and transcripts..."
+        """Build the polished, three-part desktop interface."""
+        self.setObjectName("mainWindow")
+        self.setStyleSheet("""
+            QMainWindow#mainWindow {
+                background: #F5F7FA;
+            }
+            QWidget {
+                font-family: "Segoe UI";
+                font-size: 10pt;
+                color: #202938;
+            }
+            QFrame#sidebar {
+                background: #FFFFFF;
+                border: 1px solid #E3E8EF;
+                border-radius: 12px;
+            }
+            QFrame#workspace {
+                background: #FFFFFF;
+                border: 1px solid #E3E8EF;
+                border-radius: 12px;
+            }
+            QLabel#appTitle {
+                font-size: 16pt;
+                font-weight: 700;
+                color: #17243A;
+            }
+            QLabel#appSubtitle, QLabel#mutedText {
+                color: #697586;
+            }
+            QLabel#sectionTitle {
+                font-size: 10pt;
+                font-weight: 700;
+                color: #344054;
+            }
+            QLabel#sessionTitle {
+                font-size: 18pt;
+                font-weight: 700;
+                color: #17243A;
+            }
+            QLabel#recordingIndicator {
+                padding: 7px 11px;
+                border-radius: 9px;
+                background: #EEF2F6;
+                color: #475467;
+                font-weight: 600;
+            }
+            QLineEdit {
+                background: #F8FAFC;
+                border: 1px solid #D8E0EA;
+                border-radius: 8px;
+                padding: 9px 11px;
+                selection-background-color: #2F65B0;
+            }
+            QLineEdit:focus, QTextEdit:focus {
+                border: 1px solid #4B83D1;
+            }
+            QListWidget {
+                background: transparent;
+                border: none;
+                outline: none;
+                padding: 3px;
+            }
+            QListWidget::item {
+                padding: 11px 10px;
+                margin: 2px 0;
+                border-radius: 7px;
+            }
+            QListWidget::item:hover {
+                background: #F1F5FA;
+            }
+            QListWidget::item:selected {
+                background: #E8F0FC;
+                color: #174A8B;
+                font-weight: 600;
+            }
+            QTextEdit {
+                background: #FCFDFE;
+                border: 1px solid #E1E7EF;
+                border-radius: 9px;
+                padding: 12px;
+                font-size: 11pt;
+                selection-background-color: #CFE0F8;
+            }
+            QPushButton {
+                background: #F1F4F8;
+                border: 1px solid #DCE3EB;
+                border-radius: 8px;
+                padding: 9px 12px;
+                font-weight: 600;
+            }
+            QPushButton:hover {
+                background: #E8EDF4;
+            }
+            QPushButton:pressed {
+                background: #DCE5F0;
+            }
+            QPushButton:disabled {
+                color: #98A2B3;
+                background: #F5F6F8;
+                border-color: #E8EBEF;
+            }
+            QPushButton#primaryButton {
+                background: #245FA8;
+                color: white;
+                border: 1px solid #245FA8;
+            }
+            QPushButton#primaryButton:hover {
+                background: #1D508F;
+            }
+            QPushButton#dangerButton {
+                color: #A52B32;
+                background: #FFF5F5;
+                border-color: #F1D1D3;
+            }
+            QPushButton#dangerButton:hover {
+                background: #FDEBEC;
+            }
+            QStatusBar {
+                background: #FFFFFF;
+                color: #667085;
+                border-top: 1px solid #E6EAF0;
+            }
+            QSplitter::handle {
+                background: transparent;
+                width: 8px;
+            }
+        """)
+
+        # Application header
+        app_icon = QLabel("CC")
+        app_icon.setObjectName("appMark")
+        app_icon.setFixedSize(42, 42)
+        app_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        app_icon.setStyleSheet(
+            "background:#245FA8; color:white; border-radius:10px;"
+            "font-size:15pt; font-weight:800;"
         )
+
+        title_block = QWidget()
+        title_layout = QVBoxLayout(title_block)
+        title_layout.setContentsMargins(0, 0, 0, 0)
+        title_layout.setSpacing(1)
+        app_title = QLabel("Live Captions Companion")
+        app_title.setObjectName("appTitle")
+        app_subtitle = QLabel("An independent companion for Windows Live Captions")
+        app_subtitle.setObjectName("appSubtitle")
+        title_layout.addWidget(app_title)
+        title_layout.addWidget(app_subtitle)
+
+        header = QHBoxLayout()
+        header.setContentsMargins(2, 0, 2, 8)
+        header.addWidget(app_icon)
+        header.addWidget(title_block)
+        header.addStretch(1)
+
+        self.recording_indicator = QLabel("●  Ready to capture")
+        self.recording_indicator.setObjectName("recordingIndicator")
+        self.recording_indicator.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        header.addWidget(self.recording_indicator)
+
+        # Sidebar: capture actions and searchable session history
+        self.search_input = QLineEdit()
+        self.search_input.setPlaceholderText("Search sessions and transcripts…")
         self.search_input.textChanged.connect(self.filter_sessions)
 
-        self.refresh_button = QPushButton("Refresh")
+        self.refresh_button = QPushButton("Refresh sessions")
         self.refresh_button.clicked.connect(self.refresh_sessions)
 
-        self.start_button = QPushButton("Start Recording")
+        self.start_button = QPushButton("▶   Start capture")
+        self.start_button.setObjectName("primaryButton")
         self.start_button.clicked.connect(self.start_recording)
 
-        self.stop_button = QPushButton("Stop Recording")
+        self.stop_button = QPushButton("■   Stop capture")
+        self.stop_button.setObjectName("dangerButton")
         self.stop_button.clicked.connect(self.stop_recording)
         self.stop_button.setEnabled(False)
 
-        self.rename_button = QPushButton("Rename Session")
+        self.rename_button = QPushButton("Rename")
         self.rename_button.clicked.connect(self.rename_selected_session)
 
-        self.delete_button = QPushButton("Delete Session")
+        self.delete_button = QPushButton("Delete")
+        self.delete_button.setObjectName("dangerButton")
         self.delete_button.clicked.connect(self.delete_selected_session)
 
-        self.export_button = QPushButton("Export Transcript")
+        self.export_button = QPushButton("Export transcript")
         self.export_button.clicked.connect(self.export_selected_session)
 
         self.session_list = QListWidget()
-        self.session_list.currentItemChanged.connect(
-            self.on_session_selected
-        )
+        self.session_list.currentItemChanged.connect(self.on_session_selected)
 
-        left_panel = QWidget()
-        left_layout = QVBoxLayout(left_panel)
-        left_layout.addWidget(QLabel("Recording Sessions"))
-        left_layout.addWidget(self.search_input)
-        left_layout.addWidget(self.refresh_button)
-        left_layout.addWidget(self.start_button)
-        left_layout.addWidget(self.stop_button)
-        left_layout.addWidget(self.rename_button)
-        left_layout.addWidget(self.delete_button)
-        left_layout.addWidget(self.export_button)
-        left_layout.addWidget(self.session_list)
+        sidebar = QFrame()
+        sidebar.setObjectName("sidebar")
+        sidebar_layout = QVBoxLayout(sidebar)
+        sidebar_layout.setContentsMargins(16, 16, 16, 16)
+        sidebar_layout.setSpacing(9)
 
-        self.session_title = QLabel("Select a session")
-        self.session_title.setStyleSheet(
-            "font-size: 20px; font-weight: bold;"
-        )
+        sessions_heading = QLabel("SESSION LIBRARY")
+        sessions_heading.setObjectName("sectionTitle")
+        sidebar_layout.addWidget(self.start_button)
+        sidebar_layout.addWidget(self.stop_button)
+        sidebar_layout.addSpacing(8)
+        sidebar_layout.addWidget(sessions_heading)
+        sidebar_layout.addWidget(self.search_input)
+        sidebar_layout.addWidget(self.refresh_button)
+        sidebar_layout.addWidget(self.session_list, 1)
+
+        session_actions = QHBoxLayout()
+        session_actions.addWidget(self.rename_button)
+        session_actions.addWidget(self.delete_button)
+        sidebar_layout.addLayout(session_actions)
+        sidebar_layout.addWidget(self.export_button)
+
+        # Main workspace: selected session information and transcript editor
+        self.session_title = QLabel("Welcome")
+        self.session_title.setObjectName("sessionTitle")
 
         self.session_details = QLabel(
-            "Choose a recording from the session list."
+            "Select a saved session to review its transcript, or start a new capture."
         )
+        self.session_details.setObjectName("mutedText")
         self.session_details.setWordWrap(True)
+
+        workspace_header = QHBoxLayout()
+        workspace_header.addWidget(self.session_title, 1)
 
         self.transcript_viewer = QTextEdit()
         self.transcript_viewer.setReadOnly(False)
         self.transcript_viewer.setPlaceholderText(
-            "The selected transcript will appear here."
+            "Your selected transcript will appear here. Start a capture to collect "
+            "Windows Live Captions, or select a previous session."
         )
-        self.transcript_viewer.textChanged.connect(
-            self.update_editor_state
-        )
+        self.transcript_viewer.textChanged.connect(self.update_editor_state)
 
-        self.save_button = QPushButton("Save Changes")
+        self.save_button = QPushButton("Save changes")
+        self.save_button.setObjectName("primaryButton")
         self.save_button.clicked.connect(self.save_transcript)
 
-        self.discard_button = QPushButton("Discard Changes")
+        self.discard_button = QPushButton("Discard changes")
         self.discard_button.clicked.connect(self.discard_transcript_changes)
 
-        editor_buttons = QWidget()
-        editor_layout = QVBoxLayout(editor_buttons)
-        editor_layout.setContentsMargins(0, 0, 0, 0)
-        editor_layout.addWidget(self.save_button)
-        editor_layout.addWidget(self.discard_button)
+        editor_footer = QHBoxLayout()
+        editor_footer.addStretch(1)
+        editor_footer.addWidget(self.discard_button)
+        editor_footer.addWidget(self.save_button)
 
-        right_panel = QWidget()
-        right_layout = QVBoxLayout(right_panel)
-        right_layout.addWidget(self.session_title)
-        right_layout.addWidget(self.session_details)
-        right_layout.addWidget(self.transcript_viewer, 1)
-        right_layout.addWidget(editor_buttons)
+        workspace = QFrame()
+        workspace.setObjectName("workspace")
+        workspace_layout = QVBoxLayout(workspace)
+        workspace_layout.setContentsMargins(20, 18, 20, 18)
+        workspace_layout.setSpacing(12)
+        workspace_layout.addLayout(workspace_header)
+        workspace_layout.addWidget(self.session_details)
+        workspace_layout.addWidget(self.transcript_viewer, 1)
+        workspace_layout.addLayout(editor_footer)
 
         splitter = QSplitter(Qt.Orientation.Horizontal)
-        splitter.addWidget(left_panel)
-        splitter.addWidget(right_panel)
-        splitter.setSizes([300, 800])
+        splitter.setChildrenCollapsible(False)
+        splitter.addWidget(sidebar)
+        splitter.addWidget(workspace)
+        splitter.setSizes([310, 790])
 
-        self.setCentralWidget(splitter)
+        central = QWidget()
+        central_layout = QVBoxLayout(central)
+        central_layout.setContentsMargins(18, 16, 18, 10)
+        central_layout.setSpacing(12)
+        central_layout.addLayout(header)
+        central_layout.addWidget(splitter, 1)
+        self.setCentralWidget(central)
+
         self.statusBar().showMessage("Ready")
-
         self.update_editor_state()
 
     def start_recording(self) -> None:
@@ -169,6 +352,8 @@ class MainWindow(QMainWindow):
         self.delete_button.setEnabled(False)
         self.export_button.setEnabled(False)
         self.session_list.setEnabled(False)
+        self.recording_indicator.setText("●  Starting capture…")
+        self.recording_indicator.setStyleSheet("background:#FFF4E5; color:#9A5B13; padding:7px 11px; border-radius:9px; font-weight:600;")
         self.statusBar().showMessage("Starting caption capture...")
 
         self.capture_worker.start()
@@ -194,6 +379,8 @@ class MainWindow(QMainWindow):
                 self.session_list.setCurrentItem(item)
                 break
 
+        self.recording_indicator.setText("●  Recording")
+        self.recording_indicator.setStyleSheet("background:#FDEBEC; color:#B4232C; padding:7px 11px; border-radius:9px; font-weight:700;")
         self.statusBar().showMessage(f"Recording captions: {session_path}")
 
     def on_transcript_update(self, transcript: str) -> None:
@@ -214,7 +401,45 @@ class MainWindow(QMainWindow):
     def on_capture_error(self, message: str) -> None:
         """Display a capture error reported by the worker."""
         self.statusBar().showMessage(message)
-        QMessageBox.warning(self, "Caption capture", message)
+
+        # Use an explicitly light, high-contrast dialog so the warning remains
+        # readable even when Windows is configured to use dark mode.
+        dialog = QMessageBox(self)
+        dialog.setIcon(QMessageBox.Icon.Warning)
+        dialog.setWindowTitle("Caption capture")
+        dialog.setText(message)
+        dialog.setStandardButtons(QMessageBox.StandardButton.Ok)
+        dialog.setStyleSheet("""
+            QMessageBox {
+                background-color: #FFFFFF;
+                color: #202938;
+            }
+            QMessageBox QLabel {
+                color: #202938;
+                background-color: transparent;
+                font-family: "Segoe UI";
+                font-size: 10pt;
+                min-width: 340px;
+            }
+            QMessageBox QPushButton {
+                background-color: #245FA8;
+                color: #FFFFFF;
+                border: 1px solid #245FA8;
+                border-radius: 7px;
+                padding: 7px 20px;
+                min-width: 72px;
+                font-family: "Segoe UI";
+                font-size: 10pt;
+                font-weight: 600;
+            }
+            QMessageBox QPushButton:hover {
+                background-color: #1D508F;
+            }
+            QMessageBox QPushButton:pressed {
+                background-color: #174477;
+            }
+        """)
+        dialog.exec()
 
     def on_recording_finished(self, session_id: str, status: str) -> None:
         """Restore controls and refresh history after capture ends."""

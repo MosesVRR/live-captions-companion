@@ -1,14 +1,19 @@
-# Application paths test fix
+# Live Captions Companion UI redesign
 
-Replace `tests/test_paths.py` in the project with the file in this patch.
+Replace `gui/main_window.py` with the included file.
 
-No change to `capture/paths.py` is required. The test now mocks the `os` reference
-used by `capture.paths` rather than patching the shared `os.name` attribute,
-which inadvertently changes how `pathlib.Path` behaves on Windows.
+This update preserves the existing MainWindow methods and capture/export/history
+logic while reorganizing the interface into:
+- a branded header with capture state indicator,
+- a session-library sidebar,
+- a transcript workspace with clearer editing actions.
 
-Run:
+After replacing the file, run:
 
 ```powershell
-python -m unittest tests.test_paths -v
+python -m py_compile gui/main_window.py
 python -m unittest discover -s tests -v
+python main.py
 ```
+
+This patch uses Qt styles and standard widgets; it adds no new dependencies.
