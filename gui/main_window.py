@@ -1,4 +1,6 @@
 """Main window for Live Captions Companion."""
+import ctypes
+import sys
 from pathlib import Path
 
 from PySide6.QtCore import Qt
@@ -6,6 +8,7 @@ from PySide6.QtGui import QTextCursor
 from capture.worker import CaptureWorker
 from PySide6.QtWidgets import (
     QInputDialog,
+    QComboBox,
     QFileDialog,
     QLabel,
     QListWidget,
@@ -18,6 +21,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QHBoxLayout,
     QFrame,
+    QDialog,
     QWidget,
     QLineEdit,
 )
@@ -364,6 +368,10 @@ class MainWindow(QMainWindow):
             return
 
         self.stop_button.setEnabled(False)
+        self.recording_indicator.setText("●  Stopping capture…")
+        self.recording_indicator.setStyleSheet(
+            "background:#FFF4E5; color:#9A5B13; padding:7px 11px; border-radius:9px; font-weight:600;"
+        )
         self.statusBar().showMessage("Stopping caption capture...")
         self.capture_worker.stop()
 
@@ -398,48 +406,310 @@ class MainWindow(QMainWindow):
         self.saved_transcript = transcript
         self.update_editor_state()
 
-    def on_capture_error(self, message: str) -> None:
-        """Display a capture error reported by the worker."""
-        self.statusBar().showMessage(message)
+    @staticmethod
+    def _apply_light_title_bar_to(widget: QWidget) -> None:
+        """Request a light native title bar for a top-level Qt window."""
+        if sys.platform != "win32":
+            return
 
-        # Use an explicitly light, high-contrast dialog so the warning remains
-        # readable even when Windows is configured to use dark mode.
-        dialog = QMessageBox(self)
-        dialog.setIcon(QMessageBox.Icon.Warning)
-        dialog.setWindowTitle("Caption capture")
-        dialog.setText(message)
-        dialog.setStandardButtons(QMessageBox.StandardButton.Ok)
+        try:
+            hwnd = int(widget.winId())
+            dwmapi = ctypes.WinDLL("dwmapi")
+            value = ctypes.c_int(0)  # Light title-bar appearance
+            for attribute in (20, 19):
+                result = dwmapi.DwmSetWindowAttribute(
+                    ctypes.c_void_p(hwnd),
+                    ctypes.c_uint(attribute),
+                    ctypes.byref(value),
+                    ctypes.sizeof(value),
+                )
+                if result == 0:
+                    break
+        except (AttributeError, OSError, TypeError, ValueError):
+            # Fall back to the platform's default title bar if unavailable.
+            pass
+
+    def _ask_text(
+        self,
+        title: str,
+        prompt: str,
+        initial_text: str = "",
+    ) -> tuple[str, bool]:
+        """Show a compact, light-themed text input dialog."""
+        dialog = QDialog(self)
+        dialog.setWindowTitle(title)
+        dialog.setModal(True)
+        self._apply_light_title_bar_to(dialog)
         dialog.setStyleSheet("""
-            QMessageBox {
-                background-color: #FFFFFF;
-                color: #202938;
-            }
-            QMessageBox QLabel {
-                color: #202938;
-                background-color: transparent;
+            QDialog { background: #FFFFFF; }
+            QLabel {
+                color: #344054;
+                background: transparent;
                 font-family: "Segoe UI";
                 font-size: 10pt;
-                min-width: 340px;
             }
-            QMessageBox QPushButton {
-                background-color: #245FA8;
-                color: #FFFFFF;
-                border: 1px solid #245FA8;
+            QLineEdit {
+                background: #FFFFFF;
+                color: #202938;
+                border: 1px solid #B8C7D9;
                 border-radius: 7px;
-                padding: 7px 20px;
-                min-width: 72px;
+                padding: 8px 10px;
+                selection-background-color: #CFE0F8;
+                font-family: "Segoe UI";
+                font-size: 10pt;
+            }
+            QLineEdit:focus { border: 1px solid #4B83D1; }
+            QPushButton {
+                background: #F1F4F8;
+                color: #202938;
+                border: 1px solid #DCE3EB;
+                border-radius: 7px;
+                padding: 7px 18px;
+                min-width: 64px;
                 font-family: "Segoe UI";
                 font-size: 10pt;
                 font-weight: 600;
             }
-            QMessageBox QPushButton:hover {
-                background-color: #1D508F;
+            QPushButton:hover { background: #E8EDF4; }
+            QPushButton#primaryButton {
+                background: #245FA8;
+                color: #FFFFFF;
+                border-color: #245FA8;
             }
-            QMessageBox QPushButton:pressed {
-                background-color: #174477;
+            QPushButton#primaryButton:hover { background: #1D508F; }
+        """)
+
+        prompt_label = QLabel(prompt)
+        prompt_label.setWordWrap(True)
+        text_input = QLineEdit(initial_text)
+        text_input.selectAll()
+
+        ok_button = QPushButton("OK")
+        ok_button.setObjectName("primaryButton")
+        cancel_button = QPushButton("Cancel")
+        ok_button.clicked.connect(dialog.accept)
+        cancel_button.clicked.connect(dialog.reject)
+        text_input.returnPressed.connect(dialog.accept)
+
+        buttons = QHBoxLayout()
+        buttons.addStretch(1)
+        buttons.addWidget(ok_button)
+        buttons.addWidget(cancel_button)
+
+        layout = QVBoxLayout(dialog)
+        layout.setContentsMargins(16, 14, 16, 14)
+        layout.setSpacing(10)
+        layout.addWidget(prompt_label)
+        layout.addWidget(text_input)
+        layout.addLayout(buttons)
+
+        dialog.setFixedWidth(400)
+        text_input.setFocus()
+        accepted = dialog.exec() == QDialog.DialogCode.Accepted
+        return text_input.text(), accepted
+
+    def _choose_item(
+        self,
+        title: str,
+        prompt: str,
+        items: list[str],
+        initial_index: int = 0,
+    ) -> tuple[str, bool]:
+        """Show a compact, light-themed selection dialog."""
+        dialog = QDialog(self)
+        dialog.setWindowTitle(title)
+        dialog.setModal(True)
+        self._apply_light_title_bar_to(dialog)
+        dialog.setStyleSheet("""
+            QDialog { background: #FFFFFF; }
+            QLabel {
+                color: #344054;
+                background: transparent;
+                font-family: "Segoe UI";
+                font-size: 10pt;
+            }
+            QComboBox {
+                background: #FFFFFF;
+                color: #202938;
+                border: 1px solid #B8C7D9;
+                border-radius: 7px;
+                padding: 8px 10px;
+                font-family: "Segoe UI";
+                font-size: 10pt;
+            }
+            QPushButton {
+                background: #F1F4F8;
+                color: #202938;
+                border: 1px solid #DCE3EB;
+                border-radius: 7px;
+                padding: 7px 18px;
+                min-width: 64px;
+                font-family: "Segoe UI";
+                font-size: 10pt;
+                font-weight: 600;
+            }
+            QPushButton:hover { background: #E8EDF4; }
+            QPushButton#primaryButton {
+                background: #245FA8;
+                color: #FFFFFF;
+                border-color: #245FA8;
             }
         """)
-        dialog.exec()
+
+        prompt_label = QLabel(prompt)
+        combo = QComboBox()
+        combo.addItems(items)
+        if items:
+            combo.setCurrentIndex(max(0, min(initial_index, len(items) - 1)))
+
+        ok_button = QPushButton("OK")
+        ok_button.setObjectName("primaryButton")
+        cancel_button = QPushButton("Cancel")
+        ok_button.clicked.connect(dialog.accept)
+        cancel_button.clicked.connect(dialog.reject)
+
+        buttons = QHBoxLayout()
+        buttons.addStretch(1)
+        buttons.addWidget(ok_button)
+        buttons.addWidget(cancel_button)
+
+        layout = QVBoxLayout(dialog)
+        layout.setContentsMargins(16, 14, 16, 14)
+        layout.setSpacing(10)
+        layout.addWidget(prompt_label)
+        layout.addWidget(combo)
+        layout.addLayout(buttons)
+
+        dialog.setFixedWidth(400)
+        accepted = dialog.exec() == QDialog.DialogCode.Accepted
+        return combo.currentText(), accepted
+
+    def _show_message(
+        self,
+        icon: QMessageBox.Icon,
+        title: str,
+        message: str,
+        buttons: QMessageBox.StandardButton = QMessageBox.StandardButton.Ok,
+        default_button: QMessageBox.StandardButton = QMessageBox.StandardButton.Ok,
+    ) -> QMessageBox.StandardButton:
+        """Show a compact custom dialog with controlled spacing and contrast."""
+        dialog = QDialog(self)
+        dialog.setWindowTitle(title)
+        dialog.setModal(True)
+        self._apply_light_title_bar_to(dialog)
+        dialog.setMinimumWidth(0)
+        dialog.setStyleSheet("""
+            QDialog {
+                background-color: #FFFFFF;
+            }
+            QLabel#dialogMessage {
+                color: #202938;
+                background: transparent;
+                font-family: "Segoe UI";
+                font-size: 10pt;
+            }
+            QLabel#dialogIcon {
+                font-family: "Segoe UI Symbol";
+                font-size: 22pt;
+                font-weight: 700;
+                border-radius: 20px;
+                min-width: 40px;
+                max-width: 40px;
+                min-height: 40px;
+                max-height: 40px;
+            }
+            QPushButton {
+                background: #F1F4F8;
+                color: #202938;
+                border: 1px solid #DCE3EB;
+                border-radius: 7px;
+                padding: 7px 18px;
+                min-width: 64px;
+                font-family: "Segoe UI";
+                font-size: 10pt;
+                font-weight: 600;
+            }
+            QPushButton:hover {
+                background: #E8EDF4;
+            }
+            QPushButton:default {
+                background: #245FA8;
+                color: #FFFFFF;
+                border-color: #245FA8;
+            }
+            QPushButton:default:hover {
+                background: #1D508F;
+            }
+        """)
+
+        if icon == QMessageBox.Icon.Warning:
+            symbol, icon_style = "!", "background:#FFF0C2; color:#9A6700;"
+        elif icon == QMessageBox.Icon.Question:
+            symbol, icon_style = "?", "background:#E5F2FF; color:#1769AA;"
+        elif icon == QMessageBox.Icon.Critical:
+            symbol, icon_style = "×", "background:#FDEBEC; color:#B4232C;"
+        else:
+            symbol, icon_style = "i", "background:#E8F0FC; color:#245FA8;"
+
+        content_layout = QHBoxLayout()
+        content_layout.setContentsMargins(0, 0, 0, 0)
+        content_layout.setSpacing(14)
+
+        icon_label = QLabel(symbol)
+        icon_label.setObjectName("dialogIcon")
+        icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        icon_label.setStyleSheet(icon_style)
+        content_layout.addWidget(
+            icon_label, 0, Qt.AlignmentFlag.AlignTop
+        )
+
+        message_label = QLabel(message)
+        message_label.setObjectName("dialogMessage")
+        message_label.setWordWrap(True)
+        message_label.setMaximumWidth(390)
+        content_layout.addWidget(message_label, 1)
+
+        button_layout = QHBoxLayout()
+        button_layout.setContentsMargins(0, 8, 0, 0)
+        button_layout.setSpacing(8)
+        button_layout.addStretch(1)
+
+        button_labels = (
+            (QMessageBox.StandardButton.Yes, "Yes"),
+            (QMessageBox.StandardButton.No, "No"),
+            (QMessageBox.StandardButton.Save, "Save"),
+            (QMessageBox.StandardButton.Discard, "Discard"),
+            (QMessageBox.StandardButton.Cancel, "Cancel"),
+            (QMessageBox.StandardButton.Ok, "OK"),
+            (QMessageBox.StandardButton.Close, "Close"),
+        )
+        for standard_button, label in button_labels:
+            if buttons & standard_button:
+                button = QPushButton(label)
+                button.setDefault(standard_button == default_button)
+                button.clicked.connect(
+                    lambda checked=False, result=standard_button: dialog.done(int(result))
+                )
+                button_layout.addWidget(button)
+
+        layout = QVBoxLayout(dialog)
+        layout.setContentsMargins(20, 18, 20, 16)
+        layout.setSpacing(4)
+        layout.addLayout(content_layout)
+        layout.addLayout(button_layout)
+
+        dialog.adjustSize()
+        dialog.setFixedWidth(max(360, min(dialog.sizeHint().width(), 520)))
+        return QMessageBox.StandardButton(dialog.exec())
+
+    def on_capture_error(self, message: str) -> None:
+        """Display a capture error reported by the worker."""
+        self.recording_indicator.setText("●  Capture issue")
+        self.recording_indicator.setStyleSheet(
+            "background:#FFF4E5; color:#9A5B13; padding:7px 11px; border-radius:9px; font-weight:600;"
+        )
+        self.statusBar().showMessage(message)
+        self._show_message(QMessageBox.Icon.Warning, "Caption capture", message)
 
     def on_recording_finished(self, session_id: str, status: str) -> None:
         """Restore controls and refresh history after capture ends."""
@@ -451,6 +721,17 @@ class MainWindow(QMainWindow):
         self.export_button.setEnabled(self.current_session_id is not None)
         self.session_list.setEnabled(True)
         self.active_capture_session_id = None
+
+        if status == "completed":
+            self.recording_indicator.setText("●  Ready to capture")
+            self.recording_indicator.setStyleSheet(
+                "background:#EEF2F6; color:#475467; padding:7px 11px; border-radius:9px; font-weight:600;"
+            )
+        else:
+            self.recording_indicator.setText("●  Capture issue")
+            self.recording_indicator.setStyleSheet(
+                "background:#FFF4E5; color:#9A5B13; padding:7px 11px; border-radius:9px; font-weight:600;"
+            )
 
         # The worker has finished writing files, so it is now safe to reload.
         self.refresh_sessions()
@@ -502,9 +783,7 @@ class MainWindow(QMainWindow):
         if current_text == self.saved_transcript:
             return True
 
-        answer = QMessageBox.question(
-            self,
-            "Unsaved Changes",
+        answer = self._show_message(QMessageBox.Icon.Question, "Unsaved Changes",
             "You have unsaved transcript changes. Save them before "
             "continuing?",
             QMessageBox.StandardButton.Save
@@ -645,9 +924,7 @@ class MainWindow(QMainWindow):
         try:
             transcript = self.history.read_transcript(session_id)
         except (OSError, ValueError) as exc:
-            QMessageBox.warning(
-                self,
-                "Unable to open transcript",
+            self._show_message(QMessageBox.Icon.Warning, "Unable to open transcript",
                 f"Could not read this transcript:\n{exc}",
             )
             return
@@ -694,9 +971,7 @@ class MainWindow(QMainWindow):
 
         session = self.history.get_session(self.current_session_id)
         if session is None:
-            QMessageBox.warning(
-                self,
-                "Session not found",
+            self._show_message(QMessageBox.Icon.Warning, "Session not found",
                 "The selected session no longer exists.",
             )
             return False
@@ -711,9 +986,7 @@ class MainWindow(QMainWindow):
 
             transcript_path.write_text(transcript, encoding="utf-8")
         except (OSError, ValueError) as exc:
-            QMessageBox.warning(
-                self,
-                "Save failed",
+            self._show_message(QMessageBox.Icon.Warning, "Save failed",
                 f"Could not save the transcript:\n{exc}",
             )
             return False
@@ -726,26 +999,24 @@ class MainWindow(QMainWindow):
     def export_selected_session(self) -> None:
         """Export the selected transcript to a user-chosen file."""
         if not self.current_session_id:
-            QMessageBox.information(
-                self, "No session selected", "Select a session before exporting."
+            self._show_message(QMessageBox.Icon.Information, "No session selected", "Select a session before exporting."
             )
             return
 
         if self.capture_worker is not None and self.capture_worker.isRunning():
-            QMessageBox.information(
-                self, "Recording in progress",
+            self._show_message(QMessageBox.Icon.Information, "Recording in progress",
                 "Stop the recording before exporting this session."
             )
             return
 
         session = self.history.get_session(self.current_session_id)
         if session is None:
-            QMessageBox.warning(self, "Session not found", "This session could not be found.")
+            self._show_message(QMessageBox.Icon.Warning, "Session not found", "This session could not be found.")
             return
 
         formats = ["Plain text (*.txt)", "Markdown (*.md)", "JSON (*.json)", "SubRip subtitles (*.srt)"]
-        selected, accepted = QInputDialog.getItem(
-            self, "Export Transcript", "Choose an export format:", formats, 0, False
+        selected, accepted = self._choose_item(
+            "Export Transcript", "Choose an export format:", formats, 0
         )
         if not accepted:
             return
@@ -788,11 +1059,11 @@ class MainWindow(QMainWindow):
                 timestamped_transcript_path=timestamped_path,
             )
         except (OSError, ValueError) as exc:
-            QMessageBox.warning(self, "Export failed", f"Could not export the transcript:\n{exc}")
+            self._show_message(QMessageBox.Icon.Warning, "Export failed", f"Could not export the transcript:\n{exc}")
             return
 
         self.statusBar().showMessage(f"Transcript exported: {destination}")
-        QMessageBox.information(self, "Export complete", f"Transcript exported successfully:\n{destination}")
+        self._show_message(QMessageBox.Icon.Information, "Export complete", f"Transcript exported successfully:\n{destination}")
 
     def discard_transcript_changes(self) -> None:
         """Restore the last saved transcript."""
@@ -808,9 +1079,7 @@ class MainWindow(QMainWindow):
         item = self.session_list.currentItem()
 
         if item is None:
-            QMessageBox.information(
-                self,
-                "No session selected",
+            self._show_message(QMessageBox.Icon.Information, "No session selected",
                 "Select a session before renaming it.",
             )
             return
@@ -822,19 +1091,15 @@ class MainWindow(QMainWindow):
         session = self.history.get_session(session_id)
 
         if session is None:
-            QMessageBox.warning(
-                self,
-                "Session not found",
+            self._show_message(QMessageBox.Icon.Warning, "Session not found",
                 "This session could not be found. Try refreshing the list.",
             )
             return
 
         current_name = session.get("name") or session_id
-        new_name, accepted = QInputDialog.getText(
-            self,
+        new_name, accepted = self._ask_text(
             "Rename Session",
             "Enter a name for this recording:",
-            QLineEdit.EchoMode.Normal,
             current_name,
         )
 
@@ -844,9 +1109,7 @@ class MainWindow(QMainWindow):
         new_name = new_name.strip()
 
         if not new_name:
-            QMessageBox.warning(
-                self,
-                "Invalid name",
+            self._show_message(QMessageBox.Icon.Warning, "Invalid name",
                 "The session name cannot be empty.",
             )
             return
@@ -854,9 +1117,7 @@ class MainWindow(QMainWindow):
         try:
             self.history.rename_session(session_id, new_name)
         except (OSError, ValueError) as exc:
-            QMessageBox.warning(
-                self,
-                "Rename failed",
+            self._show_message(QMessageBox.Icon.Warning, "Rename failed",
                 f"Could not rename this session:\n{exc}",
             )
             return
@@ -869,9 +1130,7 @@ class MainWindow(QMainWindow):
         item = self.session_list.currentItem()
 
         if item is None:
-            QMessageBox.information(
-                self,
-                "No session selected",
+            self._show_message(QMessageBox.Icon.Information, "No session selected",
                 "Select a session before deleting it.",
             )
             return
@@ -883,18 +1142,14 @@ class MainWindow(QMainWindow):
         session = self.history.get_session(session_id)
 
         if session is None:
-            QMessageBox.warning(
-                self,
-                "Session not found",
+            self._show_message(QMessageBox.Icon.Warning, "Session not found",
                 "This session could not be found. Try refreshing the list.",
             )
             return
 
         session_name = session.get("name") or session_id
 
-        answer = QMessageBox.question(
-            self,
-            "Delete Session",
+        answer = self._show_message(QMessageBox.Icon.Question, "Delete Session",
             f"Permanently delete '{session_name}' and all its files?\n\n"
             "This action cannot be undone.",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
@@ -907,9 +1162,7 @@ class MainWindow(QMainWindow):
         try:
             self.history.delete_session(session_id)
         except (OSError, ValueError) as exc:
-            QMessageBox.warning(
-                self,
-                "Delete failed",
+            self._show_message(QMessageBox.Icon.Warning, "Delete failed",
                 f"Could not delete this session:\n{exc}",
             )
             return
@@ -940,6 +1193,15 @@ class MainWindow(QMainWindow):
 
         self.update_editor_state()
 
+    def showEvent(self, event) -> None:
+        """Apply a light native Windows title bar when the window is shown."""
+        super().showEvent(event)
+        self._set_light_title_bar()
+
+    def _set_light_title_bar(self) -> None:
+        """Request a light native title bar for the main application window."""
+        self._apply_light_title_bar_to(self)
+
     def closeEvent(self, event) -> None:
         """Stop active capture safely before closing the application."""
         if not self.confirm_unsaved_changes():
@@ -947,9 +1209,7 @@ class MainWindow(QMainWindow):
             return
 
         if self.capture_worker is not None and self.capture_worker.isRunning():
-            answer = QMessageBox.question(
-                self,
-                "Recording in progress",
+            answer = self._show_message(QMessageBox.Icon.Question, "Recording in progress",
                 "A recording is in progress. Stop it and close the application?",
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                 QMessageBox.StandardButton.Yes,
@@ -960,9 +1220,7 @@ class MainWindow(QMainWindow):
             self.capture_worker.stop()
             self.capture_worker.wait(3000)
             if self.capture_worker.isRunning():
-                QMessageBox.warning(
-                    self,
-                    "Capture still stopping",
+                self._show_message(QMessageBox.Icon.Warning, "Capture still stopping",
                     "Caption capture is still stopping. Please try closing again.",
                 )
                 event.ignore()
