@@ -179,6 +179,18 @@ class CaptureWorker(QThread):
 
                 while not self._stop_event.is_set():
                     try:
+                        # The UI Automation wrapper can remain in memory after
+                        # the actual Live Captions window has been closed.
+                        # Check the native window on every poll so capture does
+                        # not remain stuck in the Recording state indefinitely.
+                        if not window.exists(timeout=0):
+                            status = "interrupted"
+                            self.status_update.emit(
+                                "Windows Live Captions was closed. Capture stopped; "
+                                "the transcript collected so far has been saved."
+                            )
+                            break
+
                         current_raw = get_caption_text(window)
                         current = normalize_caption_text(current_raw)
 

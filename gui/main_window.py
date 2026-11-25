@@ -3,7 +3,7 @@ import ctypes
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QStandardPaths, QUrl
 from PySide6.QtGui import QTextCursor
 from capture.worker import CaptureWorker
 from PySide6.QtWidgets import (
@@ -727,6 +727,11 @@ class MainWindow(QMainWindow):
             self.recording_indicator.setStyleSheet(
                 "background:#EEF2F6; color:#475467; padding:7px 11px; border-radius:9px; font-weight:600;"
             )
+        elif status == "interrupted":
+            self.recording_indicator.setText("●  Capture ended")
+            self.recording_indicator.setStyleSheet(
+                "background:#FFF4E5; color:#9A5B13; padding:7px 11px; border-radius:9px; font-weight:600;"
+            )
         else:
             self.recording_indicator.setText("●  Capture issue")
             self.recording_indicator.setStyleSheet(
@@ -1026,16 +1031,157 @@ class MainWindow(QMainWindow):
         session_name = session.get("name") or session.get("session_id", "transcript")
         safe_name = "".join(char if char.isalnum() or char in " -_" else "_" for char in session_name).strip()
         default_path = str(Path.home() / "Documents" / f"{safe_name or 'transcript'}.{extension}")
-        # Use Qt's own file dialog instead of the native Windows dialog.
-        # This avoids OLE/COM initialization conflicts that can occur when
-        # pywinauto has initialized COM in the application process.
-        destination, _ = QFileDialog.getSaveFileName(
-            self,
-            "Save Export",
-            default_path,
-            f"{selected};;All files (*)",
-            options=QFileDialog.Option.DontUseNativeDialog,
+        # Use Qt's non-native file dialog to avoid OLE/COM conflicts with
+        # pywinauto, and style it to match the rest of the application.
+        dialog = QFileDialog(self, "Save Export", default_path)
+        dialog.setAcceptMode(QFileDialog.AcceptMode.AcceptSave)
+        dialog.setFileMode(QFileDialog.FileMode.AnyFile)
+        dialog.setNameFilters([selected, "All files (*)"])
+        dialog.selectNameFilter(selected)
+        dialog.setDefaultSuffix(extension)
+        dialog.setOption(QFileDialog.Option.DontUseNativeDialog, True)
+
+        # Keep Qt's default locations (including My Computer) and add useful
+        # Windows folder shortcuts to the navigation sidebar.
+        sidebar_urls = list(dialog.sidebarUrls())
+        known_urls = {url.toString() for url in sidebar_urls}
+        shortcut_locations = (
+            QStandardPaths.StandardLocation.DesktopLocation,
+            QStandardPaths.StandardLocation.DocumentsLocation,
+            QStandardPaths.StandardLocation.DownloadLocation,
+            QStandardPaths.StandardLocation.PicturesLocation,
         )
+        for location in shortcut_locations:
+            folder = QStandardPaths.writableLocation(location)
+            if folder and Path(folder).is_dir():
+                url = QUrl.fromLocalFile(folder)
+                if url.toString() not in known_urls:
+                    sidebar_urls.append(url)
+                    known_urls.add(url.toString())
+        dialog.setSidebarUrls(sidebar_urls)
+
+        self._apply_light_title_bar_to(dialog)
+        dialog.resize(860, 560)
+        dialog.setStyleSheet("""
+            QFileDialog {
+                background: #F5F7FA;
+                color: #202938;
+                font-family: "Segoe UI";
+                font-size: 10pt;
+            }
+            QFileDialog QWidget {
+                font-family: "Segoe UI";
+                font-size: 10pt;
+            }
+            QLabel {
+                color: #344054;
+                background: transparent;
+            }
+            QLineEdit {
+                background: #FFFFFF;
+                color: #202938;
+                border: 1px solid #B8C7D9;
+                border-radius: 6px;
+                padding: 6px 8px;
+                selection-background-color: #245FA8;
+                selection-color: #FFFFFF;
+            }
+            QLineEdit:focus { border: 1px solid #4B83D1; }
+            QTreeView, QListView {
+                background: #FFFFFF;
+                alternate-background-color: #F7F9FC;
+                color: #202938;
+                border: 1px solid #DCE3EB;
+                border-radius: 6px;
+                outline: 0;
+                selection-background-color: #245FA8;
+                selection-color: #FFFFFF;
+            }
+            QTreeView::item, QListView::item {
+                padding: 5px;
+                border-radius: 3px;
+            }
+            QTreeView::item:hover, QListView::item:hover {
+                background: #EAF1FA;
+                color: #202938;
+            }
+            /* Keep the entire file-list header area light, including unused
+               space to the right of the final column and the corner button. */
+            QHeaderView {
+                background-color: #F1F4F8;
+                color: #475467;
+                border: none;
+            }
+            QHeaderView::section {
+                background-color: #F1F4F8;
+                color: #475467;
+                border: none;
+                border-bottom: 1px solid #DCE3EB;
+                padding: 7px 8px;
+                font-weight: 600;
+            }
+            QTableCornerButton::section {
+                background-color: #F1F4F8;
+                border: none;
+                border-bottom: 1px solid #DCE3EB;
+            }
+            QComboBox {
+                background: #FFFFFF;
+                color: #202938;
+                border: 1px solid #B8C7D9;
+                border-radius: 6px;
+                padding: 6px 8px;
+                min-height: 20px;
+            }
+            QComboBox QAbstractItemView {
+                background: #FFFFFF;
+                color: #202938;
+                selection-background-color: #245FA8;
+                selection-color: #FFFFFF;
+                border: 1px solid #DCE3EB;
+            }
+            QPushButton, QToolButton {
+                background: #FFFFFF;
+                color: #344054;
+                border: 1px solid #D0D9E4;
+                border-radius: 6px;
+                padding: 6px 11px;
+            }
+            QPushButton:hover, QToolButton:hover {
+                background: #EAF1FA;
+                border-color: #B8C7D9;
+            }
+            QPushButton:pressed, QToolButton:pressed { background: #DCE8F7; }
+            QPushButton:default {
+                background: #245FA8;
+                color: #FFFFFF;
+                border-color: #245FA8;
+                font-weight: 600;
+            }
+            QDialogButtonBox QPushButton {
+                min-width: 76px;
+                padding: 7px 14px;
+            }
+            QScrollBar:vertical {
+                background: #F5F7FA;
+                width: 12px;
+                margin: 0;
+            }
+            QScrollBar::handle:vertical {
+                background: #C5CFDB;
+                border-radius: 5px;
+                min-height: 24px;
+            }
+            QScrollBar::handle:vertical:hover { background: #AAB8C8; }
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+                height: 0;
+            }
+            QSplitter::handle { background: #E4EAF1; }
+        """)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        selected_files = dialog.selectedFiles()
+        destination = selected_files[0] if selected_files else ""
         if not destination:
             return
 

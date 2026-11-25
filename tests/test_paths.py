@@ -24,11 +24,13 @@ class TestApplicationPaths(unittest.TestCase):
         with patch("capture.paths.get_app_data_dir") as get_app_dir:
             get_app_dir.return_value = Path("/tmp/app-data")
             with patch("capture.paths.Path.cwd", return_value=Path("/tmp/no-legacy")):
-                with patch("capture.paths.os.name", "nt"):
-                    with patch.dict(os.environ, {"LOCALAPPDATA": "/tmp/local"}, clear=False):
-                        self.assertEqual(
-                            get_transcripts_dir(), Path("/tmp/app-data/transcripts")
-                        )
+                mocked_os = SimpleNamespace(name="nt", environ=os.environ)
+                with patch("capture.paths.os", mocked_os), patch.dict(
+                    os.environ, {"LOCALAPPDATA": "/tmp/local"}, clear=False
+                ):
+                    self.assertEqual(
+                        get_transcripts_dir(), Path("/tmp/app-data/transcripts")
+                    )
 
 
 if __name__ == "__main__":
