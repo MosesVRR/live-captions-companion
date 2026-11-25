@@ -14,6 +14,7 @@ env/
 build/
 dist/
 *.spec
+!LiveCaptionsCompanion.spec
 
 # Local recordings and user data
 transcripts/

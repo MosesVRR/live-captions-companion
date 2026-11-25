@@ -43,6 +43,32 @@ Run tests:
 python -m unittest discover -s tests -v
 ```
 
+## Build a Windows application folder
+
+The project includes a PyInstaller configuration for a Windows one-folder build.
+Builds should be created on Windows using Python 3.13; PyInstaller does not
+produce a Windows executable when run on Linux or macOS.
+
+In PowerShell, from the project root, run:
+
+```powershell
+.\build_windows.ps1
+```
+
+The script installs the application and build dependencies, runs the unit tests,
+and then creates the distributable folder at:
+
+```text
+dist\LiveCaptionsCompanion\
+```
+
+Launch `LiveCaptionsCompanion.exe` from that folder. Distribute the entire
+`LiveCaptionsCompanion` folder (for example, as a ZIP), not the EXE by itself.
+The build configuration is a starting point and must be validated on a clean
+Windows machine without Python installed before public distribution. In
+particular, verify Windows Live Captions detection, recording, session storage,
+and all export formats.
+
 ## Where recordings are stored
 
 By default, recordings are stored in the current user's local application data
